@@ -1,20 +1,61 @@
 <!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>Life Trail · Katiúscia</title>
 <style>
-*{box-sizing:border-box}body{margin:0;min-height:100svh;display:grid;place-items:center;padding:22px;background:radial-gradient(ellipse at 50% 8%,#243567,#0b1028 65%);color:#f3f6ff;font:16px/1.5 system-ui,sans-serif}main{width:min(100%,390px);padding:26px;border-radius:23px;border:1px solid #8aa6e05c;background:#17264ca0;box-shadow:0 22px 65px #0005}h1{margin:5px 0 8px;font-size:28px;line-height:1.15}p{margin:0 0 18px;color:#d7e3ff}small{letter-spacing:.19em;color:#a9c1ff}label{display:block;margin-bottom:6px}input,button{font:inherit;width:100%;min-height:47px;padding:10px 12px;border-radius:11px}input{color:#fff;border:1px solid #889bcb;background:#0f1c3b}button{margin-top:12px;background:#b8ceff;border:0;color:#101d3a;font-weight:650}#aviso{margin:12px 0 0;color:#ffd6cb}#aviso:empty{display:none}
+*{box-sizing:border-box}body{margin:0;min-height:100svh;display:grid;place-items:center;padding:22px;background:radial-gradient(ellipse at 50% 8%,#243567,#0b1028 65%);color:#f3f6ff;font:16px/1.5 system-ui,sans-serif}main{width:min(100%,390px);padding:26px;border-radius:23px;border:1px solid #8aa6e05c;background:#17264ca0;box-shadow:0 22px 65px #0005}h1{margin:5px 0 8px;font-size:28px;line-height:1.15}p{margin:0 0 18px;color:#d7e3ff}small{letter-spacing:.19em;color:#a9c1ff}label{display:block;margin-bottom:6px}input,button{font:inherit;width:100%;min-height:47px;padding:10px 12px;border-radius:11px}input{color:#fff;border:1px solid #889bcb;background:#0f1c3b}button{margin-top:12px;background:#b8ceff;border:0;color:#101d3a;font-weight:650}#aviso{margin:12px 0 0;color:#ffd6cb}#aviso:empty{display:none}.secundario{background:transparent;border:1px solid #889bcb;color:#e6eeff}button:disabled{opacity:.6}
 </style></head><body><main><small>STUDIO EVOLUTION TECH</small><h1>Life Trail da Katiúscia</h1><p>Digite o código de acesso para abrir seu painel.</p>
-<form id="acesso"><label for="codigo">Código de acesso</label><input id="codigo" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" required><button>Entrar</button><p id="aviso" role="status" aria-live="polite"></p></form></main>
+<form id="acesso"><label for="codigo">Código de acesso</label><input id="codigo" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" required><button type="submit">Entrar</button><button type="submit" id="salvar" class="secundario">Salvar este dispositivo</button><button type="button" id="lembrado" hidden>Entrar neste dispositivo</button><button type="button" id="esquecer" class="secundario" hidden>Esquecer dispositivo</button><p id="aviso" role="status" aria-live="polite"></p></form></main>
 <script>
-const form=document.getElementById('acesso'),campo=document.getElementById('codigo'),aviso=document.getElementById('aviso'),botao=form.querySelector('button');
-let pacote;
-form.addEventListener('submit',async e=>{
- e.preventDefault();botao.disabled=true;aviso.textContent='Abrindo o painel…';
- try{
-  if(!pacote){const r=await fetch('./app.enc?v=0.2.1');if(!r.ok)throw Error('download');pacote=new Uint8Array(await r.arrayBuffer());if(pacote.length<44)throw Error('download')}
-  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(campo.value.trim()),'PBKDF2',false,['deriveKey']);
-  const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:pacote.slice(0,16),iterations:600000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
-  const texto=await crypto.subtle.decrypt({name:'AES-GCM',iv:pacote.slice(16,28)},key,pacote.slice(28));
-  campo.value='';document.open();document.write(new TextDecoder().decode(texto));document.close();
- }catch(err){if(err.message==='download')pacote=undefined;aviso.textContent=err.name==='OperationError'?'Código incorreto. Confira e tente de novo.':'Não foi possível abrir o painel agora. Tente novamente.';botao.disabled=false;campo.focus()}
+(() => {
+const form=document.getElementById('acesso'),campo=document.getElementById('codigo'),aviso=document.getElementById('aviso');
+const salvar=document.getElementById('salvar'),lembrado=document.getElementById('lembrado'),esquecer=document.getElementById('esquecer');
+const botoes=[...form.querySelectorAll('button')];
+let pacote, chaveLocal;
+const db=()=>new Promise((ok,falha)=>{
+ const r=indexedDB.open('life-trail-katiuscia-acesso',1);
+ r.onupgradeneeded=()=>r.result.createObjectStore('acesso');
+ r.onsuccess=()=>ok(r.result);
+ r.onerror=()=>falha(r.error);
+ r.onblocked=()=>falha(Error('Banco indisponível'));
 });
+async function local(operacao,chave){
+ const banco=await db();
+ try{return await new Promise((ok,falha)=>{
+  const t=banco.transaction('acesso',operacao==='get'?'readonly':'readwrite');
+  const s=t.objectStore('acesso');
+  const r=operacao==='put'?s.put(chave,'chave'):s[operacao]('chave');
+  t.oncomplete=()=>ok(r.result);
+  t.onabort=t.onerror=()=>falha(t.error);
+ });}finally{banco.close()}
+}
+function mostrar(chave){
+ chaveLocal=chave;lembrado.hidden=esquecer.hidden=!chave;
+}
+async function baixar(){
+ if(!pacote){const r=await fetch('./app.enc?v=0.2.1');if(!r.ok)throw Error('download');const bytes=new Uint8Array(await r.arrayBuffer());if(bytes.length<44)throw Error('download');pacote=bytes}
+ return pacote;
+}
+async function abrir(chave,gravar){
+ botoes.forEach(b=>b.disabled=true);aviso.textContent='Abrindo o painel…';
+ try{
+  const bytes=await baixar();
+  if(!chave){
+   const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(campo.value.trim()),'PBKDF2',false,['deriveKey']);
+   chave=await crypto.subtle.deriveKey({name:'PBKDF2',salt:bytes.slice(0,16),iterations:600000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
+  }
+  const texto=await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes.slice(16,28)},chave,bytes.slice(28));
+  if(gravar){
+   try{await local('put',chave)}
+   catch{aviso.textContent='O navegador não salvou este dispositivo. Você ainda pode tocar em Entrar.';return}
+  }
+  campo.value='';document.open();document.write(new TextDecoder().decode(texto));document.close();
+ }catch(err){
+  aviso.textContent=err.name==='OperationError'?(chaveLocal===chave?'Acesso salvo inválido. Digite o código novamente.':'Código incorreto. Confira e tente de novo.'):'Não foi possível abrir o painel agora. Tente novamente.';
+  campo.focus();
+ }finally{botoes.forEach(b=>b.disabled=false)}
+}
+form.addEventListener('submit',e=>{e.preventDefault();abrir(null,e.submitter===salvar)});
+lembrado.addEventListener('click',()=>{if(chaveLocal)abrir(chaveLocal,false)});
+esquecer.addEventListener('click',async()=>{try{await local('delete');mostrar(undefined);aviso.textContent='Dispositivo esquecido.'}catch{aviso.textContent='Não foi possível esquecer este dispositivo.'}});
+local('get').then(mostrar).catch(()=>{});
+})();
 </script></body></html>
